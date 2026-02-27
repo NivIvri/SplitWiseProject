@@ -1,3 +1,4 @@
+# Android Studio / IntelliJ
 *.iml
 .gradle
 /local.properties
@@ -7,9 +8,17 @@
 /.idea/workspace.xml
 /.idea/navEditor.xml
 /.idea/assetWizardSettings.xml
+
+# macOS
 .DS_Store
+
+# Build folders
 /build
 /captures
 .externalNativeBuild
 .cxx
+
+# Firebase
+app/google-services.json
+google-services.json
 local.properties
