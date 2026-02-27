@@ -159,7 +159,8 @@ class ProfileRepository {
             currency = (map["currency"] as? String) ?: "ILS",
             paidByUid = (map["paidByUid"] as? String).orEmpty(),
             splits = splits,
-            createdAt = (map["createdAt"] as? Number)?.toLong() ?: 0L
+            createdAt = (map["createdAt"] as? Number)?.toLong() ?: 0L,
+            category = (map["category"] as? String).orEmpty()
         )
     }
 }

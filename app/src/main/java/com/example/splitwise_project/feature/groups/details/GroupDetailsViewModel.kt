@@ -145,7 +145,12 @@ class GroupDetailsViewModel : ViewModel() {
     }
 
     /** Add an expense with equal split among selected members. */
-    fun addExpense(description: String, amount: Double, splitMemberUids: List<String>) {
+    fun addExpense(
+        description: String,
+        amount: Double,
+        splitMemberUids: List<String>,
+        category: String = ExpenseCategory.OTHER
+    ) {
         val desc = description.trim()
         if (desc.isEmpty()) { postMessage("Description required"); return }
         if (!ValidationUtils.isValidAmount(amount)) { postMessage("Amount must be > 0"); return }
@@ -169,7 +174,8 @@ class GroupDetailsViewModel : ViewModel() {
             currency = "ILS",
             paidByUid = uid,
             splits = splits,
-            createdAt = System.currentTimeMillis()
+            createdAt = System.currentTimeMillis(),
+            category = ExpenseCategory.normalize(category)
         )
         expenseRepo.createExpense(expense) { ok, expenseId ->
             if (!ok) {

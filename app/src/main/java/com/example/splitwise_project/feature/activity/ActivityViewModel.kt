@@ -25,23 +25,34 @@ class ActivityViewModel : ViewModel() {
     private val _uidToUsername = MutableLiveData<Map<String, String>>(emptyMap())
     val uidToUsername: LiveData<Map<String, String>> = _uidToUsername
 
+    private val _isLoading = MutableLiveData(true)
+    val isLoading: LiveData<Boolean> = _isLoading
+
     private var stopObserving: (() -> Unit)? = null
     private var stopUsers: (() -> Unit)? = null
 
     /** Start observing all activity for current user. Idempotent. */
     fun start() {
         if (stopObserving != null || stopUsers != null) return
+        _isLoading.postValue(true)
         val uid = authRepo.getCurrentUser()?.uid
         if (uid.isNullOrBlank()) {
             _uiMessage.postValue("Please login to see activity.")
             _activities.postValue(emptyList())
             _uidToUsername.postValue(emptyMap())
+            _isLoading.postValue(false)
             return
         }
         stopObserving = groupRepo.observeUserActivities(
             userUid = uid,
-            onResult = { _activities.postValue(it) },
-            onError = { e: DatabaseError -> _uiMessage.postValue(e.message ?: "Failed to load activity.") }
+            onResult = {
+                _activities.postValue(it)
+                _isLoading.postValue(false)
+            },
+            onError = { e: DatabaseError ->
+                _uiMessage.postValue(e.message ?: "Failed to load activity.")
+                _isLoading.postValue(false)
+            }
         )
         stopUsers = userRepo.observeAllUsers(
             onResult = { users ->

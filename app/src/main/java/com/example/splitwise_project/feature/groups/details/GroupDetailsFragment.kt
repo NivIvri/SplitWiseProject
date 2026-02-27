@@ -3,16 +3,22 @@ package com.example.splitwise_project.feature.groups.details
 import android.os.Bundle
 import android.view.View
 import android.widget.EditText
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.navigation.fragment.findNavController
+import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.splitwise_project.R
 import com.example.splitwise_project.data.model.Expense
 import com.example.splitwise_project.data.model.Settlement
 import com.example.splitwise_project.data.repository.AuthRepository
+import com.example.splitwise_project.databinding.BottomSheetExpenseCategoriesBinding
 import com.example.splitwise_project.databinding.FragmentGroupDetailsBinding
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import java.util.Locale
 
@@ -24,8 +30,6 @@ class GroupDetailsFragment : Fragment(R.layout.fragment_group_details) {
 
     private lateinit var viewModel: GroupDetailsViewModel
     private lateinit var expensesAdapter: ExpensesAdapter
-    private lateinit var membersAdapter: MemberListAdapter
-    private lateinit var balancesAdapter: MemberBalanceAdapter
     private lateinit var summaryAdapter: SummaryBreakdownAdapter
     private var currentGroupId: String? = null
     private val currentUid: String? get() = AuthRepository().getCurrentUser()?.uid
@@ -44,12 +48,6 @@ class GroupDetailsFragment : Fragment(R.layout.fragment_group_details) {
         expensesAdapter.setCurrentUid(currentUid)
         binding.rvExpenses.layoutManager = LinearLayoutManager(requireContext())
         binding.rvExpenses.adapter = expensesAdapter
-        membersAdapter = MemberListAdapter()
-        binding.rvMembers.layoutManager = LinearLayoutManager(requireContext())
-        binding.rvMembers.adapter = membersAdapter
-        balancesAdapter = MemberBalanceAdapter()
-        binding.rvBalances.layoutManager = LinearLayoutManager(requireContext())
-        binding.rvBalances.adapter = balancesAdapter
         summaryAdapter = SummaryBreakdownAdapter()
         binding.rvSummaryBreakdown.layoutManager = LinearLayoutManager(requireContext())
         binding.rvSummaryBreakdown.adapter = summaryAdapter
@@ -59,22 +57,17 @@ class GroupDetailsFragment : Fragment(R.layout.fragment_group_details) {
         }
 
         viewModel.group.observe(viewLifecycleOwner) { group ->
-            binding.tvGroupName.text = group?.name.orEmpty()
+            // Keep the top area compact: show group name in the toolbar title.
+            binding.toolbarGroupDetails.title = group?.name.orEmpty()
         }
 
         viewModel.memberUids.observe(viewLifecycleOwner) { uids ->
             binding.chipMembersCount.text = "${uids.size} member${if (uids.size != 1) "s" else ""}"
         }
-        viewModel.memberUsers.observe(viewLifecycleOwner) { users ->
-            membersAdapter.submitList(users)
-        }
         viewModel.uidToName.observe(viewLifecycleOwner) { map ->
             latestUidToName = map
             expensesAdapter.setUidToName(map)
             renderSummaryBreakdown()
-        }
-        viewModel.memberBalances.observe(viewLifecycleOwner) { rows ->
-            balancesAdapter.submitList(rows)
         }
         viewModel.isBalanceLoading.observe(viewLifecycleOwner) { loading ->
             balanceLoading = loading
@@ -97,6 +90,15 @@ class GroupDetailsFragment : Fragment(R.layout.fragment_group_details) {
             }
             AddMembersBottomSheetFragment.newInstance(groupId)
                 .show(childFragmentManager, "AddMembersBottomSheet")
+        }
+        binding.chipMembersCount.setOnClickListener {
+            val groupId = currentGroupId.orEmpty()
+            if (groupId.isBlank()) {
+                showToast("Group not loaded")
+                return@setOnClickListener
+            }
+            GroupMembersBottomSheetFragment.newInstance()
+                .show(childFragmentManager, "GroupMembersBottomSheet")
         }
         binding.fabAddExpense.setOnClickListener { showAddExpenseDialog() }
         binding.toolbarGroupDetails.setNavigationOnClickListener {
@@ -125,6 +127,26 @@ class GroupDetailsFragment : Fragment(R.layout.fragment_group_details) {
         val dialogView = layoutInflater.inflate(R.layout.dialog_add_expense, null)
         val etDesc = dialogView.findViewById<EditText>(R.id.etDescription)
         val etAmount = dialogView.findViewById<EditText>(R.id.etAmount)
+        val rowCategory = dialogView.findViewById<LinearLayout>(R.id.rowCategory)
+        val ivCategoryIcon = dialogView.findViewById<ImageView>(R.id.ivCategoryIcon)
+        val tvCategoryValue = dialogView.findViewById<TextView>(R.id.tvCategoryValue)
+        var selectedCategory = ExpenseCategory.OTHER
+
+        fun renderCategory() {
+            ivCategoryIcon.setImageResource(ExpenseCategory.iconFor(selectedCategory))
+            tvCategoryValue.text = ExpenseCategory.labelFor(selectedCategory)
+        }
+        renderCategory()
+
+        rowCategory.setOnClickListener {
+            showCategoryPickerBottomSheet(
+                selectedCategory = selectedCategory,
+                onSelected = { newCategory ->
+                    selectedCategory = newCategory
+                    renderCategory()
+                }
+            )
+        }
 
         MaterialAlertDialogBuilder(requireContext())
             .setTitle("Add Expense")
@@ -132,13 +154,13 @@ class GroupDetailsFragment : Fragment(R.layout.fragment_group_details) {
             .setPositiveButton("Add") { _, _ ->
                 val desc = etDesc.text.toString()
                 val amount = etAmount.text.toString().toDoubleOrNull() ?: 0.0
-                showSplitMembersDialog(desc, amount)
+                showSplitMembersDialog(desc, amount, selectedCategory)
             }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
-    private fun showSplitMembersDialog(description: String, amount: Double) {
+    private fun showSplitMembersDialog(description: String, amount: Double, category: String) {
         val members = viewModel.memberUsers.value.orEmpty()
         if (members.isEmpty()) {
             showToast("No members available for split.")
@@ -156,7 +178,7 @@ class GroupDetailsFragment : Fragment(R.layout.fragment_group_details) {
             .setPositiveButton("Save") { _, _ ->
                 val selectedUids = members
                     .mapIndexedNotNull { index, user -> if (checked[index]) user.uid else null }
-                viewModel.addExpense(description, amount, selectedUids)
+                viewModel.addExpense(description, amount, selectedUids, category)
             }
             .setNegativeButton("Cancel", null)
             .show()
@@ -223,6 +245,7 @@ class GroupDetailsFragment : Fragment(R.layout.fragment_group_details) {
         val total = String.format(Locale.getDefault(), "%.2f %s", expense.amountCents / 100.0, expense.currency)
         val message = buildString {
             appendLine("Amount: $total")
+            appendLine("Category: ${ExpenseCategory.labelFor(expense.category)}")
             appendLine("Paid by: $paidBy")
             appendLine()
             appendLine("Participants:")
@@ -234,5 +257,25 @@ class GroupDetailsFragment : Fragment(R.layout.fragment_group_details) {
             .setMessage(message)
             .setPositiveButton("Close", null)
             .show()
+    }
+
+    private fun showCategoryPickerBottomSheet(
+        selectedCategory: String,
+        onSelected: (String) -> Unit
+    ) {
+        val dialog = BottomSheetDialog(requireContext())
+        val sheetBinding = BottomSheetExpenseCategoriesBinding.inflate(layoutInflater)
+        val adapter = ExpenseCategoryGridAdapter { option ->
+            onSelected(option.key)
+            dialog.dismiss()
+        }
+        sheetBinding.rvCategoryOptions.layoutManager = GridLayoutManager(requireContext(), 3)
+        sheetBinding.rvCategoryOptions.adapter = adapter
+        adapter.submitList(
+            ExpenseCategory.options,
+            ExpenseCategory.normalize(selectedCategory)
+        )
+        dialog.setContentView(sheetBinding.root)
+        dialog.show()
     }
 }

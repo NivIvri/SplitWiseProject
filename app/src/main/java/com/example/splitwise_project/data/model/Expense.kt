@@ -12,5 +12,6 @@ data class Expense(
     var currency: String = "ILS",
     var paidByUid: String = "",
     var splits: Map<String, Long> = emptyMap(),
-    var createdAt: Long = 0L
+    var createdAt: Long = 0L,
+    var category: String = "other"
 )

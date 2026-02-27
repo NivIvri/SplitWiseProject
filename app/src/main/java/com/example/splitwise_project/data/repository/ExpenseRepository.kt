@@ -88,7 +88,8 @@ class ExpenseRepository {
             currency = (map["currency"] as? String) ?: "ILS",
             paidByUid = (map["paidByUid"] as? String).orEmpty(),
             splits = splits,
-            createdAt = (map["createdAt"] as? Number)?.toLong() ?: 0L
+            createdAt = (map["createdAt"] as? Number)?.toLong() ?: 0L,
+            category = (map["category"] as? String).orEmpty()
         )
     }
 
@@ -99,6 +100,7 @@ class ExpenseRepository {
         "currency" to e.currency,
         "paidByUid" to e.paidByUid,
         "splits" to e.splits,
-        "createdAt" to e.createdAt
+        "createdAt" to e.createdAt,
+        "category" to e.category
     )
 }

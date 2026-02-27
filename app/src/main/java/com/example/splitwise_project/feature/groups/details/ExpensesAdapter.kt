@@ -44,6 +44,8 @@ class ExpensesAdapter(
 
         fun bind(e: Expense) {
             b.tvExpenseDescription.text = e.description
+            b.ivExpenseIcon.setImageResource(ExpenseCategory.iconFor(e.category))
+            b.tvExpenseCategory.text = "Category: ${ExpenseCategory.labelFor(e.category)}"
 
             val date = Date(e.createdAt)
             b.tvExpenseMonth.text = monthFormat.format(date).uppercase(Locale.getDefault())
