@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.widget.Toast
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -43,6 +44,14 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
             binding.tvTotalSpent.text = formatMoney(totals.totalIOweCents)
             binding.tvTotalReceived.text = formatMoney(totals.totalOwedToMeCents)
             binding.tvNetBalance.text = formatMoney(totals.netBalanceCents)
+            val netColorRes = if (totals.netBalanceCents < 0L) {
+                R.color.amount_borrowed
+            } else {
+                R.color.amount_lent
+            }
+            binding.tvNetBalance.setTextColor(
+                ContextCompat.getColor(binding.root.context, netColorRes)
+            )
         }
         viewModel.monthly.observe(viewLifecycleOwner) { monthly ->
             monthlyAdapter.submitList(monthly)

@@ -1,5 +1,6 @@
 package com.example.splitwise_project.feature.groups.details
 
+import android.util.Log
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
@@ -161,10 +162,12 @@ class GroupDetailsViewModel : ViewModel() {
         if (members.isEmpty()) { postMessage("No members to split with"); return }
 
         val amountCents = (amount * 100).toLong()
-        val perPerson = amountCents / members.size
-        val remainder = amountCents % members.size
-        val splits = members.mapIndexed { i, m ->
-            m to (perPerson + if (i == 0) remainder else 0L)
+        val sortedMembers = members.sorted()
+        val perPerson = amountCents / sortedMembers.size
+        val remainder = amountCents % sortedMembers.size
+        // Deterministic split in cents: first N sorted users get +1 cent remainder.
+        val splits = sortedMembers.mapIndexed { index, uid ->
+            uid to (perPerson + if (index < remainder) 1L else 0L)
         }.toMap()
 
         val expense = Expense(
@@ -219,8 +222,10 @@ class GroupDetailsViewModel : ViewModel() {
             return
         }
         _isBalanceLoading.postValue(false)
-        _settlements.postValue(buildOptimizedSettlements(latestExpenses))
+        val settlements = buildPairwiseSettlements(latestExpenses)
+        _settlements.postValue(settlements)
         recomputeMemberBalances(latestExpenses, namesOverride)
+        logBalanceDebug(latestExpenses, settlements)
     }
 
     private fun recomputeMemberBalances(
@@ -250,49 +255,68 @@ class GroupDetailsViewModel : ViewModel() {
     }
 
     /**
-     * Convert raw expense splits into optimized debtor -> creditor transfers.
-     * Positive net means user should receive; negative net means user should pay.
+     * Build direct pairwise debts from raw expenses, then net reverse directions.
+     * This avoids transitive rerouting that can hide direct debts between two users.
      */
-    private fun buildOptimizedSettlements(expenses: List<Expense>): List<Settlement> {
-        val netByUid = mutableMapOf<String, Long>()
+    private fun buildPairwiseSettlements(expenses: List<Expense>): List<Settlement> {
+        val direct = mutableMapOf<Pair<String, String>, Long>() // from -> to -> amount
 
         expenses.forEach { expense ->
             if (expense.amountCents <= 0L || expense.paidByUid.isBlank()) return@forEach
-
-            netByUid[expense.paidByUid] = (netByUid[expense.paidByUid] ?: 0L) + expense.amountCents
+            val creditor = expense.paidByUid
             expense.splits.forEach { (uid, splitCents) ->
-                netByUid[uid] = (netByUid[uid] ?: 0L) - splitCents
+                if (uid == creditor || splitCents <= 0L) return@forEach
+                val key = uid to creditor
+                direct[key] = (direct[key] ?: 0L) + splitCents
             }
         }
 
-        val debtors = netByUid
-            .filter { it.value < 0L }
-            .map { it.key to -it.value } // amount to pay
-            .toMutableList()
-        val creditors = netByUid
-            .filter { it.value > 0L }
-            .map { it.key to it.value } // amount to receive
-            .toMutableList()
-
+        val processed = mutableSetOf<Pair<String, String>>()
         val result = mutableListOf<Settlement>()
-        var i = 0
-        var j = 0
-        while (i < debtors.size && j < creditors.size) {
-            val (debtorUid, debtorAmount) = debtors[i]
-            val (creditorUid, creditorAmount) = creditors[j]
-            val transfer = minOf(debtorAmount, creditorAmount)
-            if (transfer > 0L) {
-                result.add(Settlement(fromUid = debtorUid, toUid = creditorUid, amountCents = transfer))
+        direct.keys.forEach { (a, b) ->
+            val canonical = if (a < b) a to b else b to a
+            if (!processed.add(canonical)) return@forEach
+            val aToB = direct[a to b] ?: 0L
+            val bToA = direct[b to a] ?: 0L
+            val diff = aToB - bToA
+            when {
+                diff > 0L -> result.add(Settlement(fromUid = a, toUid = b, amountCents = diff))
+                diff < 0L -> result.add(Settlement(fromUid = b, toUid = a, amountCents = -diff))
             }
-
-            val remainingDebtor = debtorAmount - transfer
-            val remainingCreditor = creditorAmount - transfer
-            debtors[i] = debtorUid to remainingDebtor
-            creditors[j] = creditorUid to remainingCreditor
-            if (remainingDebtor == 0L) i++
-            if (remainingCreditor == 0L) j++
         }
-        return result
+
+        return result.sortedWith(compareByDescending<Settlement> { it.amountCents }.thenBy { it.fromUid }.thenBy { it.toUid })
+    }
+
+    /** DEBUG-only trace to reproduce and inspect balance math. */
+    private fun logBalanceDebug(expenses: List<Expense>, settlements: List<Settlement>) {
+
+        val paidByUid = mutableMapOf<String, Long>()
+        val owedByUid = mutableMapOf<String, Long>()
+
+        expenses.forEach { e ->
+            paidByUid[e.paidByUid] = (paidByUid[e.paidByUid] ?: 0L) + e.amountCents
+            e.splits.forEach { (uid, split) ->
+                owedByUid[uid] = (owedByUid[uid] ?: 0L) + split
+            }
+            Log.d(
+                "BalanceDebug",
+                "expense id=${e.id} amountCents=${e.amountCents} paidBy=${e.paidByUid} " +
+                    "participants=${e.splits.keys.sorted()} shares=${e.splits.toSortedMap()}"
+            )
+        }
+
+        val allUids = (paidByUid.keys + owedByUid.keys).toSortedSet()
+        allUids.forEach { uid ->
+            val paid = paidByUid[uid] ?: 0L
+            val owed = owedByUid[uid] ?: 0L
+            val net = paid - owed // positive means user should receive; negative means user should pay.
+            Log.d("BalanceDebug", "user=$uid paid=$paid owed=$owed net=$net")
+        }
+
+        settlements.forEach { s ->
+            Log.d("BalanceDebug", "pairwise from=${s.fromUid} to=${s.toUid} amount=${s.amountCents}")
+        }
     }
 
     override fun onCleared() {
