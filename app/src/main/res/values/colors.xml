@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Primary Green -->
+    <color name="app_primary">#16C784</color>
+    <color name="app_primary_dark">#0FA968</color>
+
+    <!-- Light Green Background Tint -->
+    <color name="green_soft">#E8F8F1</color>
+
+    <!-- Backgrounds -->
+    <color name="surface_bg">#F5F6F8</color>
+    <color name="card_bg">#FFFFFF</color>
+
+    <!-- Text -->
+    <color name="text_primary">#1C1C1E</color>
+    <color name="text_secondary">#8E8E93</color>
+
+    <!-- Financial -->
+    <color name="amount_lent">#16C784</color>
+    <color name="amount_borrowed">#FF3B30</color>
+
+    <!-- Divider -->
+    <color name="divider">#ECECEC</color>
+
+    <!-- System -->
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+
+</resources>
